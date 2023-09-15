@@ -328,10 +328,16 @@ minimac3 is now default imputation algorithm (its no flag any more), here eagle 
 
   --popname STRING    important for freq-checks, either 
                            eur (default), 
-                           asn (asian), 
+                           asn (asian),
+                           eas (east asian), 
                            amr (america), 
                            afr (africa), 
                            asw (african american)
+
+                        ## you need to check if these exist in the reference
+
+
+
 
   --sfh FLOAT         secure frequency around 50% (default: $sec_freq)
                                 for checkflip (compare to reference),
@@ -3928,9 +3934,22 @@ if ($dos_done == 0) {
 
 	    my $plink_ch_out = "subbfile_$bprefix/plink.$bprefix.$refind";
 	    my $famname_loc = "$plink_ch_out.fam";
+	    my $bimname_loc = "$plink_ch_out.bim";	    
 
+	    unless (-e "$famname_loc") {
+		$plink_ch_out = "haps_$bprefix/plink.$bprefix.$refind";
+		$famname_loc = "$plink_ch_out.fam";
+		$bimname_loc = "$plink_ch_out.bim";	    
+		unless (-e "$famname_loc") {
+		    print "Warning: $famname_loc is not existing, might be only important with --impute2\n";
+		}		
+	    }
+
+
+	    
 	    my $prefix_loc = "";
 
+	    
 
 
 	    if (exists $indirempty_hash{$empty_ch_out} ) {
@@ -3953,14 +3972,14 @@ if ($dos_done == 0) {
 		    $plink_ch_out = $bprefix;
 
 
+#		    print "suminfo_s_v2_sw is on\n";
+#		    exit;
+		    
 		    $famname_loc = "$plink_ch_out.fam";
+		    $bimname_loc = "$plink_ch_out.bim";
 #		    $transfam_txt = "--transfam $famname_loc.transl";
 
-		    if ($trio_sw == 1){
-			$famname_loc = "haps_$bprefix/plink.$bprefix.$refind.haps.spli1.trio.fam";
-			$prefix_loc = "--prefix $trio_prefix --nodosfam";
 
-		    }
 		    
 #		    print "famname_loc: $famname_loc\n";
 #		    exit;
@@ -3973,7 +3992,13 @@ if ($dos_done == 0) {
 		    
 		}
 		
-
+		if ($trio_sw == 1){
+		    $famname_loc = "haps_$bprefix/plink.$bprefix.$refind.haps.spli1.trio.fam";
+		    
+		    $prefix_loc = "--prefix $trio_prefix --nodosfam";
+#		    print "trio is on\n";
+#		    print "$famname_loc\n";
+		}
 
 		   		    
 		unless (exists $finifiles_hash{$dos_ch_out_fini} ) {
@@ -3985,7 +4010,10 @@ if ($dos_done == 0) {
 #			$deploy_txt = "--deployfam";
 #		    }
 		    my $sys_loc = "";
-		    $sys_loc = "$dos_script $deploy_txt $prefix_loc --outname $dos_ch_out --outdir $dasudir_loc  --chr $refchr --fam $famname_loc --bim $plink_ch_out.bim $puter_out_arr";
+		    $sys_loc = "$dos_script $deploy_txt $prefix_loc --outname $dos_ch_out --outdir $dasudir_loc  --chr $refchr --fam $famname_loc --bim $bimname_loc $puter_out_arr";
+#		    print "$sys_loc\n";
+##		    print "exit\n";
+#		    exit;
 
 
 #		    print "$sys_loc\n";

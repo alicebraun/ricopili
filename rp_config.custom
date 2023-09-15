@@ -1,0 +1,35 @@
+### for SNELLIUS HPC
+### for details please refer to https://docs.google.com/document/d/14aa-oeT5hF541I8hHsDAL_42oyvlHRC5FWR7gir4xco/edit?usp=sharing
+### and https://docs.google.com/spreadsheets/d/1LhNYIXhFi7yXBC17UkjI1KMzHhKYz0j2hwnJECBGZk4/edit?usp=sharing
+variable_name                  variable_value
+----------------------------------------------
+rp_dependencies_dir  /gpfs/work5/0/pgcdac/ricopili_download/dependencies
+R_packages_dir    /gpfs/work5/0/pgcdac/ricopili_download/dependencies/R_packages
+starting_R       module_SPACE_load_SPACE_2022;_SPACE_module_SPACE_load_SPACE_R/4.2.1-foss-2022a;_SPACE_R
+path_to_Perlmodules  /gpfs/work5/0/pgcdac/ricopili_download/dependencies/perl_modules
+path_to_scratchdir   /scratch-local
+starting_ldsc  NA
+ldsc_reference   /gpfs/work5/0/pgcdac/ricopili_download/dependencies/ldsc
+rp_user_initials  ab
+rp_user_email  braun@broadinstitute.org
+rp_logfiles    /home/braun
+----------------------------------------
+----------------------------------------
+---- jobarray and queueing parameters:
+----------------------------------------
+----------------------------------------
+batch_jobcommand sbatch
+batch_memory_request NONE
+batch_walltime --time=0-HH:MM:SS
+batch_array --array=1-XXX%YYY
+batch_max_parallel_jobs_per_one_array added_to_array
+batch_jobfile XXX
+batch_name -J_SPACE_XXX
+batch_stdout -o_SPACE_XXX/%x-%j.out
+batch_stderr -e_SPACE_XXX/%x-%j.out
+batch_job_dependency --dependency=afterany:XXX
+batch_array_task_id $SLURM_ARRAY_TASK_ID
+batch_other_job_flags  --partition=thin_SPACE_--cpus-per-task=32
+batch_job_output_jid Submitted_SPACE_batch_SPACE_job_SPACE_XXX
+batch_ncores_per_node 32
+batch_mem_per_node 56

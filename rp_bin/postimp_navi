@@ -298,6 +298,7 @@ version: $rp_version
   --r2th FLOAT        areator r2-threshold, default $r2th
 
   --prekno STRING     pre-known SNPs in first column
+  --nocatalog         areaplots without catalog (without prekno)
   --mach              use miniMACH instead of Beagle
 
   --polyfrom STRING   ID-pt-file containing training set, creates then a danscore-file.
@@ -435,6 +436,7 @@ GetOptions(
     "gwclump"=> \my $gwclump,
     "info_th=s"=> \$info_th,
     "debug"=> \my $debug,
+    "nocatalog"=> \my $nocatalog,
 #    "cond"=> \my $cond,
 
 #    "chrX"=> \my $chrX,
@@ -444,6 +446,7 @@ GetOptions(
 if ($serial_sw) {
     $serial = 1;
 }
+
 
 
 
@@ -1281,7 +1284,7 @@ if (-e "$refdir/pop_$popname") {
 
 
 
-    my @gwascat_files = `ls $refdir/gwascatalog.*.rp.txt`;
+    my @gwascat_files = `ls -t $refdir/gwascatalog.*.rp.txt`;
     if (@gwascat_files == 1) {
 	print "using as gwas catalog file: ".$gwascat_files[0]."\n" if ($debug);
 	$prekno_file = $gwascat_files[0];
@@ -1769,198 +1772,204 @@ if ($polyto_file ne "") {
 #sleep(10);
 
 unless ($sep_pca) {
-unless ($result_name){
-    
-    if ($mds_name ne "NOMDS") {
-	die $!." <$mds_name>" unless open MDSI, "< $mds_name";
-	while (my $line = <MDSI>){
-	    my @cells = &split_line($line);
-	    $mds_ids {"$cells[0]\t$cells[1]"} = 1;
-	}
-	close MDSI;
-
-
-
-	foreach my $bf (@bimfli_files) {
-	    my $bfile = $bf;
-	    $bfile =~ s/.bim$//;
-	    my $famfile_loc = "$bfile.fam";
-
-	    my $bfile_root = $bfile;
-	    $bfile_root =~ s/.hg19.ch.fl$//;
-#	    print "bfile: $bfile\n";
-#	    print "bfile_old: $bfile_old\n";
-
-	    my $found = 0;
-
-#	    print "$bfile\n";
-#	    sleep(1);
-
-	    if (exists $trioset_bimfli{$bf}){
-		push @bimfli_files_tmp, $bf;
-		print "$bf as trio, so not checked for IDs\n" if ($debug);
-		next;
-	    }
-
-#	    exit;
-#	    my $famloc = "$impute_dir/$famfile_loc";
-	    my $famloc = $famfile_loc;
-	    $famloc =~ s/hg19.ch.fl.fam$/fam/;
-	    $famloc =~ s/ch.fl.fam$/fam/;
-	    
-
-	    
-	    die $!." <$famloc>" unless open IN, "< $famloc";
-	    while (my $line = <IN>){
+    unless ($result_name){
+	
+	if ($mds_name ne "NOMDS") {
+	    die $!." <$mds_name>" unless open MDSI, "< $mds_name";
+	    while (my $line = <MDSI>){
 		my @cells = &split_line($line);
-		if (exists $mds_ids{"$cells[0]\t$cells[1]"}) {
+		$mds_ids {"$cells[0]\t$cells[1]"} = 1;
+	    }
+	    close MDSI;
+
+
+
+	    foreach my $bf (@bimfli_files) {
+		my $bfile = $bf;
+		$bfile =~ s/.bim$//;
+		my $famfile_loc = "$bfile.fam";
+
+		my $bfile_root = $bfile;
+		$bfile_root =~ s/.hg19.ch.fl$//;
+		#	    print "bfile: $bfile\n";
+		#	    print "bfile_old: $bfile_old\n";
+
+		my $found = 0;
+
+		#	    print "$bfile\n";
+		#	    sleep(1);
+
+		if (exists $trioset_bimfli{$bf}){
 		    push @bimfli_files_tmp, $bf;
-		    $found = 1;
-		    last;
+		    print "$bf as trio, so not checked for IDs\n" if ($debug);
+		    next;
+		}
+
+		#	    exit;
+		#	    my $famloc = "$impute_dir/$famfile_loc";
+		my $famloc = $famfile_loc;
+		$famloc =~ s/hg19.ch.fl.fam$/fam/;
+		$famloc =~ s/ch.fl.fam$/fam/;
+		
+
+		
+		die $!." <$famloc>" unless open IN, "< $famloc";
+		while (my $line = <IN>){
+		    my @cells = &split_line($line);
+		    if (exists $mds_ids{"$cells[0]\t$cells[1]"}) {
+			push @bimfli_files_tmp, $bf;
+			$found = 1;
+			last;
+		    }
+		}
+		close IN;
+		if ($found == 0) {
+		    print "this fam-file without any IDs in analysis (--mds): ".$bf."\t".$famloc."\n" ;
 		}
 	    }
-	    close IN;
-	    if ($found == 0) {
-		print "this fam-file without any IDs in analysis (--mds): ".$bf."\t".$famloc."\n" ;
-	    }
+	    
+	    @bimfli_files = @bimfli_files_tmp;
+	    @bimfli_files_tmp = ();
 	}
-	
-	@bimfli_files = @bimfli_files_tmp;
-	@bimfli_files_tmp = ();
-    }
 
-    if ($pheno_file ne "NOPHENO") {
-	die $!." <$pheno_file>" unless open MDSI, "< $pheno_file";
-	while (my $line = <MDSI>){
-	    my @cells = &split_line($line);
-	    my $c0 = $cells[0];
-	    $c0 =~ s/.*\*// if ($strip_pt);
-	    my $c1 = $cells[1];
-#	    print "triio_debug\n";
-#	    exit;
-#	    if ($trio){
-
-#	    }
-	    $pheno_ids {"$c0\t$c1"} = 1;
-
-	    ### this here is strange trio-naming
-	    $c1 =~ s/.ca$//;
-	    $pheno_ids {"$c0\t$c1"} = 1;
-	}
-	close MDSI;
-
-
-	foreach my $bf (@bimfli_files) {
-	    my $bfile = $bf;
-	    $bfile =~ s/.bim$//;
-	    my $famfile_loc = "$bfile.fam";
-	    my $found = 0;
-
-	    if (exists $trioset_bimfli{$bf}){
-		push @bimfli_files_tmp, $bf;
-		print "$bf as trio, so not checked for IDs\n";
-		next;
-	    }
-
-	    my $bfile_root = $bfile;
-	    $bfile_root =~ s/.hg19.ch.fl$//;
-
-
-#	    my $famloc = "$impute_dir/$famfile_loc";
-	    my $famloc = $famfile_loc;
-	    $famloc =~ s/hg19.ch.fl.fam$/fam/;
-	    $famloc =~ s/ch.fl.fam$/fam/;
-
-
-	    die $!." <$famloc>" unless open IN, "< $famloc";
-	    while (my $line = <IN>){
+	if ($pheno_file ne "NOPHENO") {
+	    die $!." <$pheno_file>" unless open MDSI, "< $pheno_file";
+	    while (my $line = <MDSI>){
 		my @cells = &split_line($line);
 		my $c0 = $cells[0];
 		$c0 =~ s/.*\*// if ($strip_pt);
-		if (exists $pheno_ids{"$c0\t$cells[1]"}) {
-		    push @bimfli_files_tmp, $bf;
-		    $found = 1;
-		    last;
+		my $c1 = $cells[1];
+		
+		if (@cells < 3) {
+		    print "Error: ($0,$1) has no phenotype defined in ($pheno_file)\n";
+		    print "There might be even more\n, please make sure, $pheno_file contains only three column entries\n, if you want to drop an individual, please drop the full row\n";
 		}
 
+		#	    print "triio_debug\n";
+		#	    exit;
+		#	    if ($trio){
+
+		#	    }
+		$pheno_ids {"$c0\t$c1"} = 1;
+
+		### this here is strange trio-naming
+		$c1 =~ s/.ca$//;
+		$pheno_ids {"$c0\t$c1"} = 1;
 	    }
-	    close IN;
-	    if ($found == 0) {
-		print "this fam-file without any IDs in analysis (--pheno): ".$bf."\n";
+	    close MDSI;
+
+
+	    foreach my $bf (@bimfli_files) {
+		my $bfile = $bf;
+		$bfile =~ s/.bim$//;
+		my $famfile_loc = "$bfile.fam";
+		my $found = 0;
+
+		if (exists $trioset_bimfli{$bf}){
+		    push @bimfli_files_tmp, $bf;
+		    print "$bf as trio, so not checked for IDs\n";
+		    next;
+		}
+
+		my $bfile_root = $bfile;
+		$bfile_root =~ s/.hg19.ch.fl$//;
+
+
+		#	    my $famloc = "$impute_dir/$famfile_loc";
+		my $famloc = $famfile_loc;
+		$famloc =~ s/hg19.ch.fl.fam$/fam/;
+		$famloc =~ s/ch.fl.fam$/fam/;
+
+
+		die $!." <$famloc>" unless open IN, "< $famloc";
+		while (my $line = <IN>){
+		    my @cells = &split_line($line);
+		    my $c0 = $cells[0];
+		    $c0 =~ s/.*\*// if ($strip_pt);
+		    if (exists $pheno_ids{"$c0\t$cells[1]"}) {
+			push @bimfli_files_tmp, $bf;
+			$found = 1;
+			last;
+		    }
+
+		}
+		close IN;
+		if ($found == 0) {
+		    print "this fam-file without any IDs in analysis (--pheno): ".$bf."\n";
+		}
 	    }
+	    
+	    @bimfli_files = @bimfli_files_tmp;
+	    @bimfli_files_tmp = ();
 	}
-	
-	@bimfli_files = @bimfli_files_tmp;
-	@bimfli_files_tmp = ();
-    }
 
 
-    if ($idin_name) {
-	die $!." <$idin_name>" unless open IDIN, "< $idin_name";
-	while (my $line = <IDIN>){
-	    my @cells = &split_line($line);
-	    my $c0 = $cells[0];
-	    $c0 =~ s/.*\*// if ($strip_pt);
-	    my $c1 = $cells[1];
-#	    print "triio_debug\n";
-#	    exit;
-#	    if ($trio){
-
-#	    }
-	    $idin_ids {"$c0\t$c1"} = 1;
-
-	    ### this here is strange trio-naming
-	    $c1 =~ s/.ca$//;
-	    $idin_ids {"$c0\t$c1"} = 1;
-	}
-	close IDIN;
-
-
-	foreach my $bf (@bimfli_files) {
-	    my $bfile = $bf;
-	    $bfile =~ s/.bim$//;
-	    my $famfile_loc = "$bfile.fam";
-	    my $found = 0;
-
-	    if (exists $trioset_bimfli{$bf}){
-		push @bimfli_files_tmp, $bf;
-		print "$bf as trio, so not checked for IDs\n";
-		next;
-	    }
-
-	    my $bfile_root = $bfile;
-	    $bfile_root =~ s/.hg19.ch.fl$//;
-
-
-#	    my $famloc = "$impute_dir/$famfile_loc";
-	    my $famloc = $famfile_loc;
-	    $famloc =~ s/hg19.ch.fl.fam$/fam/;
-	    $famloc =~ s/ch.fl.fam$/fam/;
-
-
-	    die $!." <$famloc>" unless open IN, "< $famloc";
-	    while (my $line = <IN>){
+	if ($idin_name) {
+	    die $!." <$idin_name>" unless open IDIN, "< $idin_name";
+	    while (my $line = <IDIN>){
 		my @cells = &split_line($line);
 		my $c0 = $cells[0];
 		$c0 =~ s/.*\*// if ($strip_pt);
-		if (exists $idin_ids{"$c0\t$cells[1]"}) {
+		my $c1 = $cells[1];
+		#	    print "triio_debug\n";
+		#	    exit;
+		#	    if ($trio){
+
+		#	    }
+		$idin_ids {"$c0\t$c1"} = 1;
+
+		### this here is strange trio-naming
+		$c1 =~ s/.ca$//;
+		$idin_ids {"$c0\t$c1"} = 1;
+	    }
+	    close IDIN;
+
+
+	    foreach my $bf (@bimfli_files) {
+		my $bfile = $bf;
+		$bfile =~ s/.bim$//;
+		my $famfile_loc = "$bfile.fam";
+		my $found = 0;
+
+		if (exists $trioset_bimfli{$bf}){
 		    push @bimfli_files_tmp, $bf;
-		    $found = 1;
-		    last;
+		    print "$bf as trio, so not checked for IDs\n";
+		    next;
 		}
 
-	    }
-	    close IN;
-	    if ($found == 0) {
-		print "this fam-file without any IDs in analysis (--idin): ".$bf."\n";
-	    }
-	}
-	
-	@bimfli_files = @bimfli_files_tmp;
-	@bimfli_files_tmp = ();
-    }
+		my $bfile_root = $bfile;
+		$bfile_root =~ s/.hg19.ch.fl$//;
 
-}
+
+		#	    my $famloc = "$impute_dir/$famfile_loc";
+		my $famloc = $famfile_loc;
+		$famloc =~ s/hg19.ch.fl.fam$/fam/;
+		$famloc =~ s/ch.fl.fam$/fam/;
+
+
+		die $!." <$famloc>" unless open IN, "< $famloc";
+		while (my $line = <IN>){
+		    my @cells = &split_line($line);
+		    my $c0 = $cells[0];
+		    $c0 =~ s/.*\*// if ($strip_pt);
+		    if (exists $idin_ids{"$c0\t$cells[1]"}) {
+			push @bimfli_files_tmp, $bf;
+			$found = 1;
+			last;
+		    }
+
+		}
+		close IN;
+		if ($found == 0) {
+		    print "this fam-file without any IDs in analysis (--idin): ".$bf."\n";
+		}
+	    }
+	    
+	    @bimfli_files = @bimfli_files_tmp;
+	    @bimfli_files_tmp = ();
+	}
+
+    }
 }
 #exit;
 
@@ -3218,7 +3227,7 @@ unless (-e "$rootdir/resmeta_$outname.done") {
 		close FILE;
 		if ($rf_count == 0) {
 		    print "----------------------------------------------\n";
-		    print "Error: $outdir/$rf.count\nhas no entries,\nplease remove $outdir\nand rerun pipeline\n";
+		    print "Error: $outdir/$rf.count\nhas no entries,\none likely possibility is a misformatted daner file (please compare with website and doublecheck the order of the columns)\nthen remove directory $outdir\nand rerun pipeline\n";
 		    print "----------------------------------------------\n";
 		    exit;
 		}
@@ -3228,7 +3237,7 @@ unless (-e "$rootdir/resmeta_$outname.done") {
 		else {
 		    if ($rf_count_max - $rf_count > 5) {
 			print "----------------------------------------------\n";
-			print "Error: $outdir/$rf.count\nhas not enough entries,\nplease remove $outdir\nand rerun pipeline, check other count files as well\n";
+			print "Error: $outdir/$rf.count\nhas not enough entries ($rf_count_max, $rf_count),\nplease remove $outdir\nand rerun pipeline, check other count files as well\n";
 			print "----------------------------------------------\n";
 			exit;
 		    }
@@ -3968,6 +3977,10 @@ unless (-e $prekno_file) {
 
 
 my $prekno_txt = "--prekno $prekno_file";
+
+if ($nocatalog) {
+    $prekno_txt = "--nocatalog";
+}
 #print "using as gwas catalog file: ".$prekno_file."\n";
 #print "option: ".$prekno_txt."\n";
 
@@ -3989,6 +4002,9 @@ foreach my $dc_loc (@daner_allcoll) {
 		$pth_loc = 2;
 	    }
 	    close FILE;
+	}
+	if ($nocatalog) {
+	    $prekno_txt = "";
 	}
 	push @areat_arr, "$areator_script $prekno_txt $Xchr_txt --r2th $r2th --plink --pth $pth_loc --best $infile --out $dc_loc.p4 --refdir $areat_refdir";
 #	print  "$areator_script $prekno_txt $Xchr_txt --r2th $r2th --plink --pth $pth_loc --best $infile --out $dc_loc.p4 --refdir $areat_refdir\n";
@@ -4053,6 +4069,7 @@ unless (-e $areator_regplot) {
     my @pth_arr = qw /5.0e-08 1.0e-06 1.0e-05 1.0e-04 1.0e-03 1.0e-02 1.0e-01/;
     foreach my $pth_loc (@pth_arr) {
 	my $sys_str = "$comp1mhcreg_script --out $areator_all --pth $pth_loc $areator_all";
+#	my $sys_str = "$comp1mhcreg_script --out $areator_all --refdir $refdir --pth $pth_loc $areator_all";
 	print "$sys_str\n" if ($debug);
 	&mysystem ($sys_str);
 	$wc_loc = `wc -l $areator_regplot`;
@@ -4069,6 +4086,7 @@ unless (-e $areator_regplot) {
 else {
     $wc_loc = `wc -l $areator_regplot`;
 }
+#exit;
 
 if ($wc_loc < 1) {
     print "no SNP meets e-04....\n" if ($debug);
@@ -4095,6 +4113,9 @@ while (my $line = <FILE>){
     }
     else {
 	unless (-e "$a_outname.pdf"){
+	    if ($nocatalog) {
+		$prekno_txt = "--nocatalog";
+	    }
 	    my $sys = "$areaplot_script $prekno_txt --dandir $dametadir --refdir $refdir  --ngt-max -1 @cells --cols 2,11,1,3,-1,12 $daner_all" ;
 	    push @areap_arr, $sys;
 #	    print "$sys\n";

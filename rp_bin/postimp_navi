@@ -4036,9 +4036,10 @@ foreach my $dc_loc (@daner_allcoll) {
 	    }
 	    close FILE;
 	}
-
-
-	push @areat_arr, "$areator_script $prekno_txt $Xchr_txt --r2th $r2th --plink $pth_txt --best $infile --out $dc_loc.p4 --refdir $areat_refdir";
+	if ($nocatalog) {
+	    $prekno_txt = "";
+	}
+	push @areat_arr, "$areator_script $prekno_txt $Xchr_txt --r2th $r2th --plink --pth $pth_loc --best $infile --out $dc_loc.p4 --refdir $areat_refdir";
 #	print  "$areator_script $prekno_txt $Xchr_txt --r2th $r2th --plink --pth $pth_loc --best $infile --out $dc_loc.p4 --refdir $areat_refdir\n";
     }
 }
@@ -4101,7 +4102,7 @@ unless (-e $areator_regplot) {
     my @pth_arr = qw /5.0e-08 1.0e-06 1.0e-05 1.0e-04 1.0e-03 1.0e-02 1.0e-01/;
     foreach my $pth_loc (@pth_arr) {
 	my $sys_str = "$comp1mhcreg_script --out $areator_all --pth $pth_loc $areator_all";
-	my $sys_str = "$comp1mhcreg_script --out $areator_all --refdir $refdir --pth $pth_loc $areator_all";
+#	my $sys_str = "$comp1mhcreg_script --out $areator_all --refdir $refdir --pth $pth_loc $areator_all";
 	print "$sys_str\n" if ($debug);
 	&mysystem ($sys_str);
 	$wc_loc = `wc -l $areator_regplot`;
@@ -4145,6 +4146,9 @@ while (my $line = <FILE>){
     }
     else {
 	unless (-e "$a_outname.pdf"){
+	    if ($nocatalog) {
+		$prekno_txt = "--nocatalog";
+	    }
 
 	    my $sys = "$areaplot_script $prekno_txt --dandir $dametadir --refdir $refdir  --ngt-max -1 @cells --cols 2,11,1,3,-1,12 $daner_all" ;
 	    push @areap_arr, $sys;

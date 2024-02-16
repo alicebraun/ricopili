@@ -281,6 +281,7 @@ GetOptions(
     "prep=s"=> \my $prep_file,
     "debug"=> \my $debug,
     "nocatalog"=> \my $nocatalog,
+    "nocatalog"=> \my $nocatalog,
     );
 
 $ceiling = 10**(-$ceiling_sw) if ($ceiling_sw);
@@ -364,9 +365,12 @@ if ($dandir ne "NA") {
     if (-e "$dandir/refdir") {
 	$refdir = `cat $dandir/refdir`;
 	$refdir =~ s/ //g;
+	$refdir =~ s/ //g;
 	chomp ($refdir);
     }
 }
+
+$refdir =~ s!/home/radon01/sripke/bakker_ripke/hapmap_ref/!/psych/genetics_data/ripke/references_outdated/hapmap_ref/!;
 
 $refdir =~ s!/home/radon01/sripke/bakker_ripke/hapmap_ref/!/psych/genetics_data/ripke/references_outdated/hapmap_ref/!;
 
@@ -380,12 +384,16 @@ my %prekno_txt;
 
 
 
+
+
 unless ($prekno_file) {
 
     my @gwascat_files = `ls -rt $refdir/gwascatalog.*.rp.txt`;
 #    print "@gwascat_files\n" if ($debug);
+#    print "@gwascat_files\n" if ($debug);
     if (@gwascat_files > 0) {
 	print "using as gwas catalog file: ".$gwascat_files[$#gwascat_files]."\n" if ($debug);
+#	$prekno_file = "$refdir/".$gwascat_files[$#gwascat_files];
 #	$prekno_file = "$refdir/".$gwascat_files[$#gwascat_files];
 	$prekno_file = $gwascat_files[$#gwascat_files];
 	chomp($prekno_file)
@@ -401,6 +409,8 @@ unless ($prekno_file) {
 
 #if ($prekno_file) {
 
+
+unless ($nocatalog) {
 
 unless ($nocatalog) {
     &error ("$prekno_file not existing") unless open PF, "< $prekno_file";
@@ -435,11 +445,15 @@ unless ($nocatalog) {
     }
     close PF;
 }
+}
 #}
 
 
 
 my ($prekno_base,$prekno_dir) = fileparse ($prekno_file);
+
+
+
 
 
 
@@ -567,7 +581,7 @@ $genestr =~ tr/a-z/A-Z/;
 if ($areastr eq "0,0,0" || $areastr eq "NOAREA") {
 
     unless ($genestr eq "NOGENE") {
-	my @refgene_files = `ls -t $refdir/refGene*`;
+	my @refgene_files = `ls -t -t $refdir/refGene*`;
 	if (@refgene_files > 0) {
 	    $gene_list_0610 = $refgene_files[0];
 	}
@@ -857,6 +871,14 @@ else {
     }
 #}
 
+#if ($debug) {
+    print "danerfiles:\n";
+    foreach my $df (@daner_files) {
+	print "   danerfile: $df\n";
+    }
+#}
+
+my @info_files ;
 my @info_files ;
 
 if (-e "$refdir/infosum_pos.reffiles"){
@@ -866,6 +888,37 @@ if (-e "$refdir/infosum_pos.reffiles"){
 	$line =~ s/^[\s]+//g;
 	my @cells=  split /\s+/, $line;
 	my $floc = "$cells[0].info_pos";
+	push @info_files,$floc;
+    }
+    close IF;
+    print "...finished\n" if ($debug);
+    
+}
+if (-e "$refdir/infosum_pos.reffiles"){
+    print "read info_collection out of info-file...\n" if ($debug);
+    &error ("$refdir/infosum_pos.reffiles") unless open IF, "< $refdir/infosum_pos.reffiles";
+    while (my $line =<IF>){
+	$line =~ s/^[\s]+//g;
+	my @cells=  split /\s+/, $line;
+	my $floc = "$cells[0].info_pos";
+	push @info_files,$floc;
+    }
+    close IF;
+    print "...finished\n" if ($debug);
+    
+}
+
+if (-e "$refdir/infosum_pos.chunks_10"){
+    print "ref-version2: read info_collection out of infosum_pos.chunks_10...\n" if ($debug);
+    &error ("$refdir/infosum_pos.chunks_10") unless open IF, "< $refdir/infosum_pos.chunks_10";
+    while (my $line =<IF>){
+	$line =~ s/^[\s]+//g;
+	my @cells=  split /\s+/, $line;
+	if ($cells[0] eq "X") {
+	    $cells[0] = 23;
+	}
+	my $floc = $cells[0]."_".$cells[1]."_".$cells[2];
+	#	    print "$floc\n";
 	push @info_files,$floc;
     }
     close IF;
@@ -899,7 +952,26 @@ if (@info_files == 0) {
 	@info_files = `cd $refdir; ls -U *.bgl.info_pos`;
     }
 }
+### if this didn't work out, but it really should
+if (@info_files == 0) {
+    @info_files = `cd $refdir; ls -U *.bgl.info`;
+    if (@info_files == 0) {
+	@info_files = `cd $refdir; ls -U *.bgl.info_pos`;
+    }
+}
 
+if (@info_files == 0 ){
+    &error("Error reading reference directory: $refdir");
+}
+if (@daner_files == 0 ){
+    if ($web) {
+	&error("Error reading result files.");
+    }
+    else {
+	&error("no result file") if ($ARGV[0] eq "");
+	push @daner_files, $ARGV[0];
+    }
+}
 if (@info_files == 0 ){
     &error("Error reading reference directory: $refdir");
 }
@@ -963,7 +1035,31 @@ foreach my $df (@daner_files) {
     }
     my $mega_start_M = $mega_start*1000000;
     my $mega_end_M = $mega_end*1000000;
+	#	    print "start:".$mega_start."\n";
+	#	    print "end:".$mega_end."\n";
+    }
+    my $mega_start_M = $mega_start*1000000;
+    my $mega_end_M = $mega_end*1000000;
 
+    #	print "in2: $df\n";
+    #	    exit;
+    if ($tcells[0] eq "X") {
+	$tcells[0] = 23;
+    }
+    #	print "in3: $df\n";
+    #	print "dandir: $dandir\n";
+    if ($dandir ne $rootdir) {
+	#	    print "$tcells[0]\n";
+	#	    print "$mega_start_M\n";
+	#	    print "$mega_end_M\n";
+	next if ($tcells[0] ne $chr);
+	next if ($mega_start_M > $end);
+	next if ($mega_end_M < $beg);
+    }
+    #	print "in4: $df\n";
+    print "-----------------------------------\n" if ($debug);
+    print "this one is in: $df\n" if ($debug);
+    print "-----------------------------------\n" if ($debug);
     #	print "in2: $df\n";
     #	    exit;
     if ($tcells[0] eq "X") {
@@ -986,8 +1082,13 @@ foreach my $df (@daner_files) {
 
     push @daner_files_loc, $df;
 }
+    push @daner_files_loc, $df;
+}
 #    exit;
 
+my @pth_arr = qw/0.000001 0.001 0.01 0.02 0.03 0.04 0.05 0.1 0.2 0.5 1.0/;
+my $sc = 0;
+my %pth_c;
 my @pth_arr = qw/0.000001 0.001 0.01 0.02 0.03 0.04 0.05 0.1 0.2 0.5 1.0/;
 my $sc = 0;
 my %pth_c;
@@ -998,7 +1099,19 @@ if (@daner_files_loc > 0 ) {
     print "daner_files_loc: @daner_files_loc\n" if ($debug);
     $pfile = "$out.dandir";
     my $cc = 0;
+if (@daner_files_loc > 0 ) {
+    print "daner_files_loc: @daner_files_loc\n" if ($debug);
+    $pfile = "$out.dandir";
+    my $cc = 0;
 
+    foreach my $df (@daner_files_loc){
+	
+	&mysystem ("cp $dandir/$df .");
+	my $df_out = $df ;
+	if ($df =~ /.gz$/){
+	    &mysystem ("gunzip -f $df");
+	    $df_out =~ s/.gz$//;
+	}
     foreach my $df (@daner_files_loc){
 	
 	&mysystem ("cp $dandir/$df .");
@@ -1024,7 +1137,28 @@ if (@daner_files_loc > 0 ) {
 			$pth_c{$pth_loc}++;
 		    }
 		}
+	&error ("df_out $df_out not existing") unless open DO, "< $df_out";
+	&error ("$pfile") unless open PF, ">> $pfile";
+	my $line =<DO>;
+	if ($cc == 0) {
+	    print PF "$line";
+	}
+	while (my $line =<DO>){
+	    my @cells = @{&split_line_ref(\$line)};
+	    if ($cells[$poscol-1] >= $beg && $cells[$poscol-1] <= $end){
+		print PF "$line";
+		foreach my $pth_loc (@pth_arr){
+		    if ($cells[$pcol-1] < $pth_loc){
+			$pth_c{$pth_loc}++;
+		    }
+		}
 
+		
+		$sc++;
+	    }
+	}
+	close DO;
+	close PF;
 		
 		$sc++;
 	    }
@@ -1040,13 +1174,29 @@ if (@daner_files_loc > 0 ) {
 	#	    }
 	#	push @daner_files_loc_uz, $df_out;
 	$cc++;
+	#	    if ($cc == 0) {
+	#		&mysystem ("cat $df_out > $pfile");
+	#	    }
+	#	    else {
+	#		&mysystem ("tail -n +2 $df_out >> $pfile");
+	#	    }
+	#	push @daner_files_loc_uz, $df_out;
+	$cc++;
 
 
     }
     $noloc = 0;
 }
 else {
+    }
+    $noloc = 0;
+}
+else {
 
+    &error ("specified region without data, please revisit");
+    #	print "0 daner_loc\n";
+    #	sleep(5);
+}
     &error ("specified region without data, please revisit");
     #	print "0 daner_loc\n";
     #	sleep(5);
@@ -1065,6 +1215,15 @@ unless ($nopth) {
 	    $plot_th = $pth_loc;
 	    last;
 	}
+    }
+}
+
+foreach my $pth_loc (sort keys %pth_c) {
+    #	print "n_$pth_loc: $pth_c{$pth_loc}\n";
+    if ($pth_c{$pth_loc} > $ths) {
+	print "continue with $pth_c{$pth_loc} SNPs left with $pth_loc\n" if ($debug);
+	$plot_th = $pth_loc;
+	last;
     }
 }
 
@@ -1092,12 +1251,37 @@ close PF;
 close PFS;
 
 
+&error ("pfile $pfile file not existing") unless open PF, "< $pfile";
+&error ("pfile.sub $pfile.sub file not existing") unless open PFS, "> $pfile.sub";
+my $line =<PF>;
+print PFS "$line";
+print "$line\t$pfile\n" if ($debug);
+while (my $line =<PF>){
+    my @cells = @{&split_line_ref(\$line)};
+#    if ($debug) {
+#	print "snp: $cells[$snpcol-1]\t";
+#	print "P: $cells[$pcol-1]\n";
+ #   }
+    $snps_loc{$cells[$snpcol-1]} =1 if ($cells[$pcol - 1] < $plot_th);
+    $snps_loc{$cells[$snpcol-1]} =1 if (exists $prekno_hash{$snpcol-1});
+    if ($snps_loc{$cells[$snpcol-1]} ==1){
+	print PFS "$line";
+    }
+}
+close PF;
+close PFS;
+
+
+
 
 #	print "hier info: @info_files ...\n";
 #	sleep(10);
 #    exit;
 
 
+my $imatch = 0;
+foreach my $df (@info_files) {
+    #	print "read $df ...\n";
 my $imatch = 0;
 foreach my $df (@info_files) {
     #	print "read $df ...\n";
@@ -1111,7 +1295,14 @@ foreach my $df (@info_files) {
 
     #	    print "bind: $bind\n";
     #	    sleep(1);
+    #	    print "bind: $bind\n";
+    #	    sleep(1);
 
+    my @tcells = split /_/, $bind;
+    my $mega_start = $tcells[1];
+    my $mega_end = $tcells[2];
+    
+    #	print "read $df start: $mega_start end: $mega_end ...\n";
     my @tcells = split /_/, $bind;
     my $mega_start = $tcells[1];
     my $mega_end = $tcells[2];
@@ -1119,6 +1310,17 @@ foreach my $df (@info_files) {
     #	print "read $df start: $mega_start end: $mega_end ...\n";
 
 
+    if ($mega_end eq "") {
+	$mega_end = ($mega_start) * 10;
+	$mega_start = ($mega_start-1) * 10;
+    }
+    my $mega_start_M = $mega_start*1000000;
+    my $mega_end_M = $mega_end*1000000;
+    
+    next if ($tcells[0] ne $chr);
+    next if ($mega_start_M > $end);
+    next if ($mega_end_M < $beg);
+    #	print "$df\n";
     if ($mega_end eq "") {
 	$mega_end = ($mega_start) * 10;
 	$mega_start = ($mega_start-1) * 10;
@@ -1158,9 +1360,44 @@ foreach my $df (@info_files) {
 	close DF;
 	close IF;
     }
+    my %line_hash;
+    %line_hash = ();
+    my $lc = 0;
+    ## read info-info in detail
+    if (-e "$refdir/$df"){
+	&error ("df2 $refdir/$df not existing") unless open DF, "< $refdir/$df";
+	&error ("info $info_file not existing") unless open IF, ">> $info_file";
+	while (my $line =<DF>){
+	    my @cells = @{&split_line_ref(\$line)};
+	    if ($cells[8] >= $beg && $cells[8] <= $end){
+		print IF "@cells\n";
+		
+		$frq_h{$cells[0]} = $cells[3];
+		$frq_a1{$cells[0]} = $cells[2];
+		$frq_a2{$cells[0]} = $cells[4];
+		
+		if (exists $snps_loc{$cells[0]}) {
+		    $line_hash{$lc} = 1;
+		}
+		
+		
+	    }
+	    $lc++;
+	}
+	close DF;
+	close IF;
+    }
 
     ## old: &mysystem ("cat $refdir/$df >> $info_file");
+    ## old: &mysystem ("cat $refdir/$df >> $info_file");
 
+    ## write out tped file
+    my $tped_loc = $df;
+    my $tfam_loc = $df;
+    my $fam_loc = $df;
+    $tped_loc =~ s/info_pos$/tped/;
+    $tfam_loc =~ s/info_pos$/tfam/;
+    #	$fam_loc =~ s/info_pos$/fam/;
     ## write out tped file
     my $tped_loc = $df;
     my $tfam_loc = $df;
@@ -1173,9 +1410,17 @@ foreach my $df (@info_files) {
     #	print "read $refdir/$tped_loc...\n";
     #	sleep(10);
     my $lc = 0;
+    #	print "read $refdir/$tped_loc...\n";
+    #	sleep(10);
+    my $lc = 0;
 
 
     ### old clumsy way: &mysystem ("cat $refdir/$tped_loc >> $ref_tped_file");
+    ### old clumsy way: &mysystem ("cat $refdir/$tped_loc >> $ref_tped_file");
+
+    $imatch++;
+}
+
 
     $imatch++;
 }
@@ -1188,14 +1433,27 @@ if ($imatch == 0) {
     ## write out tped file
     $tped_loc =~ s/info_pos$/tped/;
     $tfam_loc =~ s/info_pos$/tfam/;
+    my $tped_loc = $info_files[0];
+    my $tfam_loc = $info_files[0];
+    ## write out tped file
+    $tped_loc =~ s/info_pos$/tped/;
+    $tfam_loc =~ s/info_pos$/tfam/;
 
 
+    print "tped: $refdir/$tped_loc\n" if ($debug);
+    print "tfam: $refdir/$tfam_loc\n" if ($debug);
     print "tped: $refdir/$tped_loc\n" if ($debug);
     print "tfam: $refdir/$tfam_loc\n" if ($debug);
 
     &mysystem ("cp $refdir/$tfam_loc $ref_tfam_file");
     &mysystem ("cp $refdir/$tped_loc $ref_tped_file");
+    &mysystem ("cp $refdir/$tfam_loc $ref_tfam_file");
+    &mysystem ("cp $refdir/$tped_loc $ref_tped_file");
 
+    print "Warning: imatch was necessary -> sleeping now\n" if ($debug);
+    #	sleep(3);
+    $imatch = 1;
+}
     print "Warning: imatch was necessary -> sleeping now\n" if ($debug);
     #	sleep(3);
     $imatch = 1;
@@ -1324,6 +1582,11 @@ else {
 #    print "ls $refdir/*chr$chr.*bed"."\n" ;
 #    sleep(5);
     
+
+
+#    print "ls $refdir/*chr$chr.*bed"."\n" ;
+#    sleep(5);
+    
     $bfile_sc = `ls $refdir/*chr$chr.*bed`;
     if ($bfile_sc eq "") {
 	my $chr_part = "$chr"."_";
@@ -1352,6 +1615,7 @@ my $sc = 0;
 print "SNP-MARK: $snp_mark\n" if ($debug);
 &error ("pf_sub $pfile.sub not existing") unless open PF, "< $pfile.sub";
 &error ("pf_loc $pfile.local") unless open LO, "> $pfile.local";
+&error ("pf_loc $pfile.local") unless open LO, "> $pfile.local";
 print P4 "SNP\tP\n";
 while (my $line =<PF>){
     my @cells = @{&split_line_ref(\$line)};
@@ -1376,6 +1640,7 @@ close LO;
 
 print "start plink_step1\n" if ($debug);
 
+
 #my $cmd = "$ploc/plink --bfile $bfile_sc --extract $pfile.local --out $pfile.local.plink --make-bed";
 ## here speed up
 my $cmd = "$ploc/plink --silent --memory 2000 --bfile $bfile_sc --extract $pfile.local --out $pfile.local.plink --make-bed ";
@@ -1392,7 +1657,21 @@ my $cmd = "$ploc/plink --silent --memory 2000 --bfile $bfile_sc --extract $pfile
 #sleep(5);
 
 
+
+
+
+#print "$cmd\n";
+
+#print "ploc: $ploc\n";
+#print "bfile_sc: $bfile_sc\n";
+#print "pfile: $pfile\n";
+
+#print "sleep\n";
+#sleep(5);
+
+
 &mysystem($cmd);
+
 
 
 #print "finished plink\n";
@@ -1404,6 +1683,10 @@ my $cmd = "$ploc/plink --silent --memory 2000 --bfile $bfile_sc --extract $pfile
 #print "nsnps: ".$sc."\n";
 #print "sleep\n";
 #sleep(5);
+
+if ($debug) {
+    print "flags: $clump\t$nclump\n";
+}
 
 if ($debug) {
     print "flags: $clump\t$nclump\n";
@@ -1882,6 +2165,7 @@ if (1){
 		my $ldp = 0;
 		&error("$pfile.local.plink.bim") unless open BIM, "< $pfile.local.plink.bim";
 		
+		
 		while (my $line =<BIM>){
 		    my @cells = @{&split_line_ref(\$line)};
 		    if ($snp_loc eq $cells[1]) {
@@ -2093,8 +2377,8 @@ if (1){
 	foreach my $line (@hm3_coll) {
 	    my @cells = @{&split_line_ref(\$line)};
 	    #	    if ($cells[3] >= $beg && $cells[3] <= $end) {
-	    if (exists $frq_h{$cells[$snpcol-1]}) {
-		$hmind {$cells[$snpcol-1]} = 1;
+	    if (exists $frq_h{$cells[$snpcol-$snpcol-1]}) {
+		$hmind {$cells[$snpcol-$snpcol-1]} = 1;
 	    }
 	    #		print "$cells[1]\n";
 	    #	    }

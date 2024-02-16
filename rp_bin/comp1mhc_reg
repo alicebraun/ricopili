@@ -4,6 +4,8 @@ use strict;
 
 
 
+
+
 ##########################################################################################
 #
 #         counts independent regions of areator file
@@ -44,12 +46,23 @@ my $ldcol = 12; # ld friend column
 my $pvcol = 3; # ld friend column
 my $chrcol = 1; # ld friend column
 my $poscol = 2; # position of topindex
+my $poscol = 2; # position of topindex
 my $leftcol = 13; # ld friend column
 my $rightcol = 14; # ld friend column
 #my $leftcol = 17; # ld friend column
 #my $rightcol = 18; # ld friend column
 my $gtcol = 6; # ld friend column
 my $frcol = 8; # ld friend column
+
+my $topi_pos_col = 2; # position of top index snp
+my $topi_all_col = 6; # alleles of top index snp
+my $topi_frqu_col = 8; # freq a1 of controls of top index snp
+my $topi_info_col = 9; # info of top index snp
+my $topi_or_col = 4; # OR of top index snp
+my $topi_se_col = 5; # SE of top index snp
+
+my $genes_col = 21;
+    
 
 my $topi_pos_col = 2; # position of top index snp
 my $topi_all_col = 6; # alleles of top index snp
@@ -148,6 +161,7 @@ chr2    -       227596032       227663506       2       227596032,227659704,    
 }
 
 
+
 if ($meta) {
     $incol = 1; # index column 
 
@@ -189,6 +203,17 @@ if ($repl) {
 
 
     $poscol = 2; # ld friend column
+
+
+    $topi_pos_col = 2; # position of top index snp
+    $topi_all_col = 3; # alleles of top index snp
+    $topi_frqu_col = 6; # freq a1 of controls of top index snp
+    $topi_info_col = 7; # info of top index snp
+    $topi_or_col = 19; # OR of top index snp
+    $topi_se_col = 20; # SE of top index snp
+
+    $genes_col = 4;
+    
 
 
     $topi_pos_col = 2; # position of top index snp
@@ -347,14 +372,84 @@ unless ($nogene) {
 
 
 print "merge clumps\n" if ($debug);
+#####################################
+## reading the gene file
+
+
+### clean the gene file a bit
+print  "rewrite reference gene_list: $refgene\n" if ($debug);
+unless (-e "refGene.loc") {
+    print "create local gene list\n" if ($debug);
+    die $! unless open GI, "< $refgene";
+    die $! unless open GO, "> refGene.loc.tmp";
+    while (my $line = <GI>){
+	my @cells = @{&split_line_ref(\$line)};
+	$cells[0] =~ s/chr//;
+	$cells[0] =~ s/_random//;
+
+	print GO "$cells[0]";
+	print GO " $cells[2]";
+	print GO " $cells[3]";
+	print GO " $cells[7]\n";
+
+    }
+    close GI;
+    close GO;
+    &mysystem("mv refGene.loc.tmp refGene.loc");
+}
+
+
+
+## creating hash (per chromosome)
+my @gene_name_arr = ();
+my @gene_star_arr = ();
+my @gene_stop_arr = ();
+print  "sort refGene: $refgene\n" if ($debug);
+&mysystem("sort -k1,1n -k2,2n refGene.loc > refGene.loc.sorted.tmp");
+&mysystem("mv refGene.loc.sorted.tmp  refGene.loc.sorted");
+
+
+print "create gene arrays per chromosome\n" if ($debug);
+die $! unless open GI, "< refGene.loc.sorted";
+while (my $line = <GI>){
+    my @cells = @{&split_line_ref(\$line)};
+    my $chr_loc = $cells[0] * 1;
+    push @{ $gene_name_arr[$chr_loc] }, $cells[3];
+    push @{ $gene_star_arr[$chr_loc] }, $cells[1];
+    push @{ $gene_stop_arr[$chr_loc] }, $cells[2];
+}
+close GI;
+
+
+
+
+print "merge clumps\n" if ($debug);
 #################################################
 ## go through infile
 ##########################################
 
 my %index_hash;
+my %index_hash;
 
 my $txt_name = $ARGV[0];
 my $txt_name_sorted = $txt_name.".locsorted";
+
+my $index = 0;
+die $!."($txt_name_sorted)" unless open IN, "< $txt_name";
+my $line = <IN>;
+while (my $line = <IN>){
+    my @cells = @{&split_line_ref(\$line)};
+    $index ++;
+    my $snp_loc = $cells[$incol];
+    $index_hash{$snp_loc} = $index;
+}
+close IN;
+
+#print $index_hash{"rs58120505"}.":(rs58120505)\n";
+#exit;
+
+
+    
 
 my $index = 0;
 die $!."($txt_name_sorted)" unless open IN, "< $txt_name";
@@ -389,6 +484,7 @@ my @pos_arr;
 my @left_arr;
 my @right_arr;
 
+
 my @for_snp_arr;
 my @for_chr_arr;
 my @for_pos_arr;
@@ -419,16 +515,28 @@ my $old_frquloc = 0;
 my $old_infoloc = 0;
 
 
+
+my $old_orloc = 0;
+my $old_posloc = 0;
+my $old_seloc = 0;
+my $old_allloc = 0;
+my $old_frquloc = 0;
+my $old_infoloc = 0;
+
+
 my $old_right = 0;
 my $old_left = 0;
 my $old_chr = 0;
 my $old_index = "rsx";
+my $old_index_n = "rsx";
 my $old_index_n = "rsx";
 my $topold_index = "rsx";
 my $cc = 0;
 die $!."($txt_name_sorted)" unless open IN, "< $txt_name_sorted";
 die $!."($txt_name_sorted.reg.tmp)" unless open OUT, "> $txt_name_sorted.regplot.tmp";
 die $! unless open POU, "> $txt_name_sorted.purregplot.tmp";
+die $! unless open REGDET, "> $txt_name_sorted.regions.tmp";
+die $! unless open NG, "> $txt_name_sorted.regions.ngenes";
 die $! unless open REGDET, "> $txt_name_sorted.regions.tmp";
 die $! unless open NG, "> $txt_name_sorted.regions.ngenes";
 die $!."($txt_name_sorted.forplot)" unless open FOR, "> $txt_name_sorted.forplot";
@@ -464,6 +572,7 @@ while (my $line = <IN>){
 
     if ($pv_loc > $pth) {
 #	print "no\n" if ($debug);
+#	print "no\n" if ($debug);
 	next;
     }
 #    next if ($cells[$pvcol] > 1.0e-06);
@@ -472,6 +581,16 @@ while (my $line = <IN>){
     my $pos_loc = 1 * $cells[$poscol];
     my $chr_loc = 1 * $cells[$chrcol];
     my $snp_loc = $cells[$incol];
+
+
+    my $topi_pos_loc = $cells[$topi_pos_col] ;
+    my $topi_all_loc = $cells[$topi_all_col] ;
+    my $topi_frqu_loc = $cells[$topi_frqu_col] ;
+    my $topi_info_loc = $cells[$topi_info_col] ;
+    my $topi_or_loc = $cells[$topi_or_col] ;
+    my $topi_se_loc = $cells[$topi_se_col] ;
+    my $genes_loc = $cells[$genes_col] ;
+
 
 
     my $topi_pos_loc = $cells[$topi_pos_col] ;
@@ -498,6 +617,8 @@ while (my $line = <IN>){
 
     #    if ($snp_loc eq "rs9607782" || $snp_loc eq "rs6002655" || $snp_loc eq "rs12691307") {
     if (0) {
+    #    if ($snp_loc eq "rs9607782" || $snp_loc eq "rs6002655" || $snp_loc eq "rs12691307") {
+    if (0) {
     if ($debug) {
 	print "$snp_loc";
 	print "\t$chr_loc";
@@ -511,7 +632,9 @@ while (my $line = <IN>){
 #	sleep(1);
     }
     }
+    }
 
+    
     
 
     my $overlap = 0;
@@ -543,8 +666,10 @@ while (my $line = <IN>){
 #	if ($pv_loc <= $pth) {
 	if ($pv_loc <= 1.0e-06) {
 #	    print "Warning: $snp_loc\n" if ( $pv_loc > 5.0e-08 );
+#	    print "Warning: $snp_loc\n" if ( $pv_loc > 5.0e-08 );
 	    if ($old_index eq "") {
 		$old_index = $snp_loc ;
+		$old_index_n = $snp_loc."(".$index_hash{$snp_loc}.")" ;
 		$old_index_n = $snp_loc."(".$index_hash{$snp_loc}.")" ;
 
 	    }
@@ -581,9 +706,34 @@ while (my $line = <IN>){
 
 
 	
+
+#	my @genes=  split /,/, $genes_loc;
+#	foreach my $gene (@genes) {
+#	    my $dist = $gene;
+#	    $dist =~ s/.*\(//;
+#	    $dist =~ s/\)//;
+#	    $gene =~ s/\(.*\)//;
+#	    $genes_out{$gene} = 1;
+#	}
+
+#	print "$genes_loc\n";
+
+	#	exit;
+
+
+
+	
 	if ($pv_loc < $old_pvloc) {
 	    $old_pvloc = $pv_loc;
 	    $topold_index = $snp_loc ;
+
+	    $old_orloc = $topi_or_loc;
+	    $old_posloc = $topi_pos_loc;
+	    $old_seloc = $topi_se_loc;
+	    $old_allloc = $topi_all_loc;
+	    $old_frquloc = $topi_frqu_loc;
+	    $old_infoloc = $topi_info_loc;
+
 
 	    $old_orloc = $topi_or_loc;
 	    $old_posloc = $topi_pos_loc;
@@ -671,6 +821,7 @@ while (my $line = <IN>){
 	}
 	$old_index = "";
 	$old_index_n = "";
+	$old_index_n = "";
 	$topold_index = "";
 	$old_chr = $chr_loc;
 
@@ -681,6 +832,26 @@ while (my $line = <IN>){
 #	if ($pv_loc < 1.0e-06) {
 	if ($pv_loc <= $pth) {
 	    $old_index = $snp_loc;
+	    $old_index_n = $snp_loc."(".$index_hash{$snp_loc}.")" ;
+
+
+	    $old_orloc = $topi_or_loc;
+	    $old_posloc = $topi_pos_loc;
+	    $old_seloc = $topi_se_loc;
+	    $old_allloc = $topi_all_loc;
+	    $old_frquloc = $topi_frqu_loc;
+	    $old_infoloc = $topi_info_loc;
+
+
+#	    my @genes=  split /,/, $genes_loc;
+#	    foreach my $gene (@genes) {
+#		my $dist = $gene;
+#		$dist =~ s/.*\(//;
+#		$dist =~ s/\)//;
+#		$gene =~ s/\(.*\)//;
+#		$genes_out{$gene} = 1;
+#	    }
+	    
 	    $old_index_n = $snp_loc."(".$index_hash{$snp_loc}.")" ;
 
 
@@ -792,13 +963,16 @@ if ($old_pvloc <= $pth) {
 close OUT;
 close POU;
 close REGDET;
+close REGDET;
 close FOR;
 
+#print "Warning\n";
 #print "Warning\n";
 
 
 &mysystem ("sort -k1,1g $txt_name_sorted.regplot.tmp > $txt_name_sorted.regplot");
 &mysystem ("sort -k1,1g $txt_name_sorted.purregplot.tmp > $txt_name_sorted.purregplot");
+&mysystem ("sort -k7,7g $txt_name_sorted.regions.tmp > $txt_name_sorted.regions");
 &mysystem ("sort -k7,7g $txt_name_sorted.regions.tmp > $txt_name_sorted.regions");
 &mysystem ("sort -k6,6 $txt_name_sorted.forplot > $txt_name_sorted.sorted.forplot");
 &mysystem ("txt2xls --cogr 1,9,11,12 --txt $txt_name_sorted.regions");

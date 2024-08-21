@@ -1,0 +1,584 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+#############################
+# load utility functions
+#############################
+
+use FindBin;
+use lib "$FindBin::Bin";
+use Ricopili::Utils qw(trans);
+use Compress::Zlib ;
+
+
+#############################
+# read config file
+#############################
+
+my $bcloc = &trans("bcloc");
+my $rloc = &trans("rloc");
+my $r_sys = "$rloc";
+$r_sys =~ s/_SPACE_/ /g;
+
+
+system("$r_sys RHOME > /dev/null");
+my $status = ($? >> 8);
+if ($status != 0) {
+    print "I could not start R, maybe you are using an old ricopili configuration?\ne.g. rloc does not need a path but a full starting command.\n";
+    exit;
+}
+
+
+###########################################################################################################
+#
+#
+#    haps2pseudo
+#
+#          created by Stephan Ripke, Broadinstitute, sripke@broadinstitute.org
+#
+#                                  12/01/10
+#
+#
+#
+#    converts haps/sample (out of shapeit family phasing) into pseudo-case/control
+#
+#
+#
+#
+##########################################################################################################
+
+
+my $version = "1.0.0";
+my $progname = $0;
+$progname =~ s!^.*/!!;
+my $command_line = "$progname @ARGV";
+
+my $outname = "pseudo_out";
+
+##### help message
+my $usage = "
+Usage : $progname [options] haps sample
+
+version: $version
+
+
+  --help           print this message and exit
+  --chrX           chrX is phased without relatedness so needs extra attention
+  --out            outname (haps/sample)
+
+  --shapeit5       take phases from bcf, run with shapeit5 and --pedigree
+                    then it is : $progname [options] bcf shape5	 
+
+ converts haps/sample (out of shapeit family phasing) into pseudo-case/control
+
+  must been created with --children
+
+ created by Stephan Ripke 2012 at MGH, Boston, MA
+ 
+";
+
+#### evaluate options
+use Getopt::Long;
+GetOptions( 
+    "help"=> \my $help,
+    "chrX"=> \my $chrx,
+    "shapeit5"=> \my $shapeit5,
+    "out=s"=> \$outname,
+    );
+
+
+die "$usage\n" if ($help);
+
+###################################################
+###  system call with test if successfull
+###################################################
+
+sub mysystem(){
+    my ($systemstr)="@_";
+    system($systemstr);
+    my $status = ($? >> 8);
+    die "$systemstr\n->system call failed: $status" if ($status != 0);
+}
+
+
+##########################################
+# subroutine to split a plink-output-line with references
+##########################################
+
+sub split_line_ref {
+    my ($line)=${$_[0]};
+    chomp($line);
+    $line =~ s/^[\s]+//g;
+    my @cols=  split /\s+/, $line;
+    \@cols;
+}
+
+
+#################################################################
+# R script for shapeit5 (written by georgia panagiotaropoulou)
+###############################################################
+
+my $R_templ = '
+## #!/usr/bin/env Rscript
+
+## written by georgia panagiotaropoulou
+
+args = commandArgs(trailingOnly=TRUE)
+vcf.file <- "VCFFILE.rest" # old args[1] #VCF/BCF basename (without the ".vcf" extension)
+trio.file <- "TRIOFILE" # args[2]
+
+vcf <- read.table(vcf.file, stringsAsFactors=F, comment.char = "", , h=T, check.names=F)
+#names(vcf)[1] <- "CHROM"
+
+trio <- read.table(trio.file, stringsAsFactors=F)
+names(trio) <- c("ID","FATHER","MOTHER")
+
+vcf.out <- vcf[,1:9]
+
+for (i in seq(1,dim(trio)[1])) { ## Do for all trios
+ #icas   <- gsub("\\\\-",".", gsub("\\\\*",".",trio[i,1]))
+ #icas.f <- gsub("\\\\-",".", gsub("\\\\*",".",trio[i,2]))
+ #icas.m <- gsub("\\\\-",".", gsub("\\\\*",".",trio[i,3]))
+
+ icas   <- trio[i,1] #Offspring
+ icas.f <- trio[i,2] #Father
+ icas.m <- trio[i,3] #Mother
+
+ cohort.name <- strsplit(strsplit(icas, split="____")[[1]][1], split="\\\\*")[[1]][1]
+ fid <- strsplit(strsplit(icas, split="____")[[1]][1], split="\\\\*")[[1]][2]
+ iid <- strsplit(icas, split="____")[[1]][2]
+
+ ## Extract family (trio) genotypes
+ ivcf <- vcf[,c(icas,icas.f,icas.m)]
+
+ ## Create pseudocontrol genotypes
+ igeno.f <- apply(ivcf, 1, function(x) as.numeric(strsplit(x[2],split="\\\\|")[[1]][1]) + as.numeric(strsplit(x[2],split="\\\\|")[[1]][2]) - as.numeric(strsplit(x[1],split="\\\\|")[[1]][1]))
+ igeno.m <- apply(ivcf, 1, function(x) as.numeric(strsplit(x[3],split="\\\\|")[[1]][1]) + as.numeric(strsplit(x[3],split="\\\\|")[[1]][2]) - as.numeric(strsplit(x[1],split="\\\\|")[[1]][2]))
+
+ ## Format output
+ igeno.con <- as.data.frame(paste0(as.character(igeno.f),"|",as.character(igeno.m)))
+ igeno.cas <- as.data.frame(ivcf[,1])
+
+ icas.name <- paste0(cohort.name,"*",fid,"_pca","____",iid)
+ icon.name <- paste0(cohort.name,"*",fid,"_pco","____",iid)
+ colnames(igeno.cas) <- icas.name
+ colnames(igeno.con) <- icon.name
+
+ vcf.out <- cbind(vcf.out, igeno.cas, igeno.con)
+
+}
+
+## Write output
+#system(paste0("head -8 ", vcf.file, ".vcf > ", vcf.file, ".caco.vcf"), intern=T)
+write.table(vcf.out, file=paste0(vcf.file,".pseudo.tmp"), quote=F, row.names=F, sep="\t")
+#system(paste0("cat ", vcf.file, ".caco.tmp >> ", vcf.file, ".caco.vcf"), intern=T)
+#system(paste0("rm ", vcf.file,".caco.tmp"), intern=T)
+';
+
+#####################################
+# print array to file
+####################################
+
+sub a2file {
+    my ($file, @lines)=@_;
+    &error ($!) unless open FILE, "> $file";
+    foreach (@lines){
+	print FILE $_;
+    }
+    close FILE;
+}
+
+
+
+#################################################
+#  BEGIN
+#################################################
+
+
+
+my $hfile = $ARGV[0];
+my $sfile = $ARGV[1];
+
+my $outhaps = $outname.".haps";
+
+my $sc = 0;
+
+if ($shapeit5) {
+
+
+    ### make vcf
+    my $bcftools_cmd = $bcloc . "/bcftools";
+    my $sys_loc_bcftools = "$bcftools_cmd view $hfile.bcf > $hfile.vcf";
+    $sc = system ($sys_loc_bcftools);
+
+    if ($sc != 0 ) {
+	print "Error with: $sys_loc_bcftools\n";
+	exit;
+    }
+
+    ## separate VCF
+    my $sys_loc_sep_header = "grep ^## $hfile.vcf > $hfile.vcf.header; grep -v ^## $hfile.vcf > $hfile.vcf.rest";
+    $sc = system ($sys_loc_sep_header);
+
+    if ($sc != 0 ) {
+	print "Error with: $sys_loc_sep_header\n";
+	exit;
+    }
+
+
+    ## make pseudocontrols
+    $R_templ =~ s/VCFFILE/$hfile.vcf/;
+    $R_templ =~ s/TRIOFILE/$sfile/;
+
+    &a2file ( "$hfile.R.pseudo.in" , $R_templ);
+    my $system_R="$r_sys < $hfile.R.pseudo.in --vanilla > /dev/null 2>&1 \n";
+    $sc = system ($system_R);
+
+    if ($sc != 0 ) {
+	print "Error with: $system_R\n";
+	exit;
+    }
+
+    
+    ## merge header
+    my $sys_loc_add_header = "cat $hfile.vcf.header $hfile.vcf.rest.pseudo.tmp > $hfile.pseudo.vcf";
+    $sc = system ($sys_loc_add_header);
+    if ($sc != 0 ) {
+	print "Error with: $sys_loc_add_header\n";
+	exit;
+    }
+
+    ## make bcf
+    my $bcftools_cmd2 = $bcloc . "/bcftools";
+    ##my $sys_loc_bcftools2 = "$bcftools_cmd  view -Ou $hfile.pseudo.vcf > $hfile.pseudo.bcf; $bcftools_cmd index $hfile.pseudo.bcf";
+    my $sys_loc_bcftools2 = "$bcftools_cmd  convert -O b -o $hfile.pseudo.bcf $hfile.pseudo.vcf; $bcftools_cmd index $hfile.pseudo.bcf";
+
+#    	print "now: $sys_loc_bcftools2\n";
+#	exit;
+    
+    $sc = system ($sys_loc_bcftools2);
+
+    if ($sc != 0 ) {
+	print "Error with: $sys_loc_bcftools2\n";
+	exit;
+    }
+
+    &mysystem ("touch $outhaps.fini");	    
+
+    exit;
+}
+
+
+
+my $outsample = $outname.".sample";
+my $outsampleimp4 = $outname.".sample.i4";
+my $outfam = $outname.".fam";
+
+my @haps_arr;
+my @name_arr;
+
+
+
+
+## read sample file into hash
+#################################################
+
+my %case_loc;
+my %parent1_hash;
+my %parent2_hash;
+my %sex_hash;
+my %id_loc;
+my %case_fam;
+my %id_content;
+
+print "$sfile\n";
+print "$outsample\n";
+print "$outsampleimp4\n";
+print "$outfam\n";
+
+die $!."($sfile)" unless open IFILE, "< $sfile";
+my $line = <IFILE>;
+$line = <IFILE>;
+
+
+my $tc =0;
+while (my $line = <IFILE>){
+    $tc++;
+    my @cells = @{&split_line_ref(\$line)};
+    $id_loc{"$cells[1]"} = $tc;
+#    print "$cells[1], $tc\n";
+    if ($cells[6] == 2) {
+	if ($cells[3] eq "0" || $cells[4] eq "0") {
+	    print "warning: case $cells[1] as founder\n";
+#	    exit;
+	}
+	else {
+	    $case_loc{"$cells[1]"} = $tc;
+	    $case_fam{"$cells[1]"} = $cells[0];
+	    $parent1_hash{"$cells[1]"} = $cells[3];
+	    $parent2_hash{"$cells[1]"} = $cells[4];
+	    $sex_hash{"$cells[1]"} = $cells[5];
+	}
+    }
+#    last if ($tc > 6);
+}
+close IFILE;
+
+my @out_arr = keys %case_loc;
+
+die $!."($outsample)" unless open OFILE, "> $outsample";
+die $!."($outsampleimp4)" unless open OFILE3, "> $outsampleimp4";
+die $!."($outfam)" unless open OFILE2, "> $outfam";
+
+print OFILE "ID_1 ID_2 missing father mother sex plink_pheno\n";
+print OFILE "0 0 0 D D D B\n";
+
+print OFILE3 "ID_1 ID_2 missing sex\n";
+print OFILE3 "0 0 0 D\n";
+
+foreach my $cl (@out_arr) {
+    my $i_loc = $id_loc{$cl};
+    my $p1_loc = $id_loc{$parent1_hash{$cl}};
+    my $p2_loc = $id_loc{$parent2_hash{$cl}};
+    my $sex_loc = $sex_hash{$cl};
+    unless ($i_loc > 0) {
+	print "case itself $cl does not exist\n";
+	exit;
+    }
+    unless ($p1_loc > 0) {
+	print "parent1 of $cl does not exist\n";
+	exit;
+    }
+    unless ($p2_loc > 0) {
+	print "parent2 of $cl does not exist\n";
+	exit;
+    }
+
+
+    my $id = $cl."_pca";
+
+    print OFILE $id;
+    print OFILE " ".$id;
+    print OFILE " 0";
+    print OFILE " ".$parent1_hash{$cl};
+    print OFILE " ".$parent2_hash{$cl};
+    print OFILE " ".$sex_loc;
+    print OFILE " 2\n";
+
+    print OFILE3 $id;
+    print OFILE3 " ".$id;
+    print OFILE3 " 0";
+    print OFILE3 " ".$sex_loc."\n";
+
+
+#    print OFILE " 0\n";
+    $id = $cl."_pco";
+
+    print OFILE $id;
+    print OFILE " ".$id;
+    print OFILE " 0";
+    print OFILE " ".$parent1_hash{$cl};
+    print OFILE " ".$parent2_hash{$cl};
+    print OFILE " ".$sex_loc;
+    print OFILE " 1\n";
+
+    print OFILE3 $id;
+    print OFILE3 " ".$id;
+    print OFILE3 " 0";
+    print OFILE3 " ".$sex_loc."\n";
+
+#    print OFILE " 0\n";
+
+
+    my $id_name = $cl;
+    my @id_arr = split '\.\.\.' ,$id_name;
+    print OFILE2 $id_arr[0]."_pca";
+    print OFILE2 " ".$id_arr[1];
+    print OFILE2 " 0";
+    print OFILE2 " 0";
+    print OFILE2 " ".$sex_loc;
+    print OFILE2 " 2\n";
+    print OFILE2 $id_arr[0]."_pco";
+    print OFILE2 " ".$id_arr[1];
+    print OFILE2 " 0";
+    print OFILE2 " 0";
+    print OFILE2 " ".$sex_loc;
+    print OFILE2 " 1\n";
+
+#    print "case: $cl, $i_loc\n";
+#    print "parent1: $parent1_hash{$cl}, $p1_loc\n";
+#    print "parent1: $parent2_hash{$cl}, $p2_loc\n";
+}
+
+
+close OFILE;
+close OFILE2;
+close OFILE3;
+
+#exit;
+
+
+
+
+
+
+### create pseudo-control and pseudo-control
+#################################################
+print "diff\n";
+
+die $!."($outhaps)" unless open OFILE, "> $outhaps";
+die $!."($hfile)" unless open IFILE, "< $hfile";
+$sc = 0;
+my $pt = 0;
+
+#foreach my $line (@inlines){
+while (my $line = <IFILE>){
+
+    my @cells = @{&split_line_ref(\$line)};
+    my $snp_info_loc = shift(@cells);
+    foreach(1..4) {
+	$snp_info_loc .= " ".shift(@cells);
+    }
+
+    print OFILE $snp_info_loc;
+
+
+
+
+    foreach my $cl (@out_arr) {
+	my $i_loc = $id_loc{$cl};
+	my $p1_loc = $id_loc{$parent1_hash{$cl}};
+	my $p2_loc = $id_loc{$parent2_hash{$cl}};
+
+
+
+	unless ($chrx) {
+	    my $nt1_loc = ($p1_loc * 2); # non-transmitted two alleles per ID (see shift up there), then arrays starts with 0
+	    my $tr1_loc = $nt1_loc - 1;
+	    my $nt2_loc = ($p2_loc * 2);
+	    my $tr2_loc = $nt2_loc -1;
+	    
+	    print OFILE " ".$cells[$tr1_loc - 1]." ".$cells[$tr2_loc - 1];
+	    print OFILE " ".$cells[$nt1_loc - 1]." ".$cells[$nt2_loc - 1];
+	    
+	}
+	else {
+
+	    my $i2_loc = $i_loc * 2;
+	    my $i1_loc = $i2_loc - 1;
+
+
+	    my $fa2_loc = ($p1_loc * 2); 
+	    my $fa1_loc = $fa2_loc - 1; 
+	    my $mo2_loc = ($p2_loc * 2); 
+	    my $mo1_loc = $mo2_loc - 1; 
+
+	    if ($cells[$fa1_loc - 1]  ne $cells[$fa2_loc - 1]) {
+		print "Warning: father not homozygote on chrX: $cl, $parent1_hash{$cl}\n";
+#		die;
+	    }
+
+	    my $homo_mother = 0;
+	    if ($cells[$mo1_loc - 1]  eq $cells[$mo2_loc - 1]) {
+		$homo_mother = 1;
+	    }
+
+	    #### homo mother
+	    if ($homo_mother ==1 ) {
+		######## male offspring
+		if ($sex_hash{$cl} == 1) {
+		    print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$mo2_loc - 1];
+		    print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$mo2_loc - 1];
+		}
+		#### female offspring
+		else {
+		    print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$fa1_loc - 1];
+		    print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$fa1_loc - 1];
+		}
+	    }
+
+	    ### hetero mother
+	    else {
+		######## male offspring
+		if ($sex_hash{$cl} == 1) {
+		    if ($cells[$i1_loc - 1] eq $cells[$mo1_loc - 1]) {
+			print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$mo1_loc - 1];
+			print OFILE " ".$cells[$mo2_loc - 1]." ".$cells[$mo2_loc - 1];
+		    }
+		    else {
+			print OFILE " ".$cells[$mo2_loc - 1]." ".$cells[$mo2_loc - 1];
+			print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$mo1_loc - 1];
+		    }
+
+		}
+
+		#### female offspring
+		else {
+		    if ($cells[$i1_loc - 1] eq $cells[$i2_loc - 1]) {
+			print OFILE " ".$cells[$fa1_loc - 1]." ".$cells[$fa2_loc - 1];
+			if ($cells[$mo1_loc - 1] eq $cells[$fa1_loc - 1]) {
+			    print OFILE " ".$cells[$mo2_loc - 1]." ".$cells[$fa1_loc - 1]; ### !!! which order?
+			}
+			else {
+			    print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$fa1_loc - 1]; ### !!! which order?
+			}
+		    }
+		    else {
+			if ($cells[$mo1_loc - 1] eq $cells[$fa1_loc - 1]) {
+			    print OFILE " ".$cells[$mo2_loc - 1]." ".$cells[$fa1_loc - 1]; ### !!! which order?
+			}
+			else {
+			    print OFILE " ".$cells[$mo1_loc - 1]." ".$cells[$fa1_loc - 1]; ### !!! which order?
+			}
+			print OFILE " ".$cells[$fa1_loc - 1]." ".$cells[$fa2_loc - 1];
+		    }
+		}
+	    }
+	    
+	    
+	 }   
+	    
+	    
+	    
+#	print "$tr1_loc\n";
+#	print "$tr2_loc\n";
+#	print "$nt1_loc\n";
+#	print "$nt2_loc\n";
+	    
+#	exit;
+    }
+    print OFILE "\n";
+
+
+
+
+
+}
+
+close OFILE;
+close IFILE;
+
+
+
+&mysystem ("touch $outhaps.fini");
+#print ("touch $outhaps.fini)";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print "success: $outhaps\n";
+
+
+

@@ -1,0 +1,622 @@
+#!/usr/bin/env perl
+use strict;
+
+my $version = "1.3.0";
+my $progname = $0;
+$progname =~ s!^.*/!!;
+
+#############################
+# load utility functions
+#############################
+
+use FindBin;
+use lib "$FindBin::Bin";
+use Ricopili::Utils qw(trans);
+
+use lib $ENV{rp_perlpackages};
+use Compress::Zlib ;
+
+#############################
+# read config file
+#############################
+
+my $ploc = &trans("p2loc");
+my $t0 = time;
+
+###############################################
+
+
+
+##### help message
+my $usage = "
+Usage : $progname haps-file (out of impute2)
+
+version: $version
+
+  --outname STRING    outdir, mandatory
+  --outdir STRING     outname, mandatory
+  --fam STRING        fam-file, mandatory
+  --bim STRING        bim-file, mandatory
+  --chr INT           chromosome
+  --help              print this message and exit
+
+  --mm4               take mm4 pipeline format
+#  --deployfam         dosages come from deployed job with IDs=FID_IID
+
+  --nodosfam          if there is not a separata dosagefamfile
+#  --transfam STRING   contains the key to translate the vcf IDs
+
+##  --prefix STRING     prefix into famfile
+
+  --debug             extended output
+
+
+ created by Stephan Ripke 2012 at MGH, Boston, MA
+ in the frame of the PGC
+
+";
+
+my $prefix = "";
+
+use Getopt::Long;
+GetOptions( 
+
+    "help"=> \my $help,
+    "outname=s"=> \my $outname,
+#    "deployfam"=> \my $deployfam,
+    "prefix=s"=> \my $prefix,
+    "outdir=s"=> \my $outdir,
+    "debug"=> \my $debug,
+    "fam=s"=> \my $famname,
+#    "transfam=s"=> \my $transfamname,
+    "bim=s"=> \my $bimname,
+    "chr=s"=> \my $chr,
+    "mm4"=> \my $mm4_sw,
+    "nodosfam"=> \my $nodosfam,
+
+    );
+
+die ($usage) if $help;
+die ($usage) unless $famname;
+die ($usage) unless $bimname;
+die ($usage) unless $outname;
+die ($usage) unless $outdir;
+die ($usage) unless $chr;
+
+
+# die "$usage" if (@ARGV != 1);
+
+
+##########################################
+# subroutine to split a plink-output-line with references
+##########################################
+
+sub split_line_ref {
+    my ($line)=${$_[0]};
+    chomp($line);
+    $line =~ s/^[\s]+//g;
+    my @cols=  split /\s+/, $line;
+    \@cols;
+}
+
+
+###################################################
+###  print time sinc beginning
+###################################################
+
+
+
+sub mytime(){
+    my $secs = time-$t0;
+    my $mins = $secs/60;
+    my $hours = $secs/3600;
+    print $secs." seconds gone since start of the script\n" if ($debug);
+
+    
+}
+
+
+
+
+###################################################
+###  system call with test if successfull
+###################################################
+
+my @cmd_collect;
+
+sub mysystem(){
+    my ($systemstr)="@_";
+    system($systemstr);
+    my $status = ($? >> 8);
+    die "$systemstr\n->system call failed: $status" if ($status != 0);
+    push @cmd_collect, $systemstr;
+
+}
+
+
+
+
+
+############################################
+######### BEGIN
+########################################
+
+
+
+
+
+
+my @haps_collection = @ARGV;
+my $nf = @ARGV - 1;
+
+my $haps_file1 = @haps_collection[0];
+my $haps_file = "$haps_file1.combined";
+my $haps_fam = "$haps_file1.fam";
+my $haps_file_gz = "$haps_file1.combined.gz";
+my $haps_file_gz_map = "$haps_file1.combined.gz.map";
+
+unless (-e $haps_fam) {
+    print "Warning: $haps_fam not existing\n" if ($debug);
+    $haps_fam = $famname;
+#    $haps_fam =~ s/.imp.gz.fam/.imp.GP.gz.fam/;
+#    unless (-e $haps_fam) {
+#	print "Error: $haps_fam not existing\n";
+#	exit;
+#    }
+}
+
+
+my $info_file = $haps_file1;
+$info_file =~ s/.gz$//;
+#$info_file =~ s/.GP$//;
+$info_file .= "_info";
+
+#unless (-e $info_file) {
+
+#    $info_file =~ s/_info$/.info/;
+#    unless (-e $info_file) {#
+#	print "Error: $info_file does not exist\n";
+#	exit;
+#    }
+#}
+
+
+
+
+
+
+&mytime();
+
+
+
+my @filehandles_gz;
+
+print "####### nf = $nf \n" if ($debug);
+
+if ($nf > 0) {
+
+
+    print "####### merge files (@haps_collection) into $haps_file_gz\n" if ($debug);
+    
+    foreach my $infile (@haps_collection) {
+	
+	my $igz = gzopen("$infile", "rb")  or die "Cannot open file $infile: $gzerrno\n" ;
+	push(@filehandles_gz, $igz);
+	
+    }
+
+
+    
+    print "open $haps_file_gz\n" if ($debug);
+    
+    my $ogz = gzopen("$haps_file_gz", "wb")  or die "Cannot open file $haps_file_gz: $gzerrno\n" ;
+    #$ogz->gzwrite($header) ;
+    
+    my $igz = $filehandles_gz[0];
+    
+    
+    while ($igz->gzreadline(my $line)){
+	chomp($line);
+	my @cells = @{&split_line_ref(\$line)};
+
+#	if ($nf > 0) {
+	foreach my $igzn (1..$nf) {
+	    my $igz_add = $filehandles_gz[$igzn];
+	    $igz_add->gzreadline(my $line);
+	    chomp($line);
+	    my @cells_add = @{&split_line_ref(\$line)};
+	    
+	    
+	    foreach (1..5) {
+		shift (@cells_add);
+	    }
+	    
+	    @cells = (@cells,@cells_add);
+	    
+	}
+#	}
+	$ogz->gzwrite("@cells\n");
+	
+    }
+    
+    foreach my $igzn (1..$nf-1) {
+	my $igz_add = $filehandles_gz[$igzn];
+	$igz->gzclose();
+    }
+
+    print "close $haps_file_gz\n" if ($debug);  
+    $ogz->gzclose();
+
+
+}
+else {
+    $haps_file_gz = $haps_collection[0];
+
+}
+
+#exit;
+print "####### haps_file_gz = $haps_file_gz\n" if ($debug);
+
+
+
+##########
+# bring multiple files into one
+########
+
+
+
+#print "finished big guy\n";
+#exit;
+
+
+
+
+
+
+#my $haps_file = $ARGV[0];
+
+my $dosout = "$outdir/$outname";
+my $mapout = "$outdir/$outname.out.dosage.map";
+my $ngtout = "$outdir/$outname.out.dosage.ngt";
+my $famout = "$outdir/$outname.out.dosage.fam";
+my $finiout = "$outdir/$outname.out.dosage.fini";
+
+my $famname_in = $famname;
+
+
+if ($prefix) {
+    die $!."($famname)" unless open IF, "< $famname";
+    die $!."($famname.pre)" unless open OF, "> $famname.pre";
+
+    while (my $line = <IF>){
+	chomp($line);
+
+	print OF "$prefix*$line\n";
+    }
+    close IF;
+    close OF;
+    $famname_in = "$famname.pre";
+    &mysystem ("cp $famname.pre $famout");
+#    print "hier1\n"; exit;   
+}
+#else {
+#    &mysystem ("cp $famname $famout");
+#}
+
+
+
+my @famarray;
+push @famarray, "header";
+
+
+
+
+unless ($nodosfam) {
+
+
+
+    if (0){
+	## this for deployed jobs where ID=FID_IID, it's not needed any more since prepdep uses idnum now
+
+	my %famhash;
+	die $!."($famname_in)" unless open IF, "< $famname_in";
+	while (my $line = <IF>){
+	    my @cells = @{&split_line_ref(\$line)};
+	    my $lid = $cells[0]."_".$cells[1];
+
+	    if (exists $famhash {$lid}){
+		print "Error: $lid not unique (multiple underscores?)\n";
+		print "please contact ricopili developers\n";
+		exit;
+	    }
+	    $famhash {$lid} = "@cells";
+
+	    
+	}
+	close IF;
+
+#	print "hier2\n"; exit;
+	die $!."($haps_fam)" unless open IF, "< $haps_fam";
+	die $!."($famout.ow)" unless open OF, "> $famout";
+	
+	while (my $line = <IF>){
+	    my @cells = @{&split_line_ref(\$line)};
+	    
+	    #    if ($cells[5] != 2 && $cells[5] != 1) {#
+	    #	$cells[5] = 1;
+	    #    }
+	    
+	    unless (exists $famhash{$cells[0]}) {
+		print "Error: $cells[0] from deployed vcf is not found in $famname_in\n";
+		exit;
+	    }
+	    print OF $famhash {$cells[0]}."\n";
+	}
+	close IF;
+	close OF;
+
+#	print "$famout\n";#
+#	print "debug\n";
+#	exit;
+
+
+    }
+    else {
+	### this here is done is standard ricopili
+	print "famname_in: $famname_in\n";
+	print "hapsfam: $haps_fam\n";
+	print "famout: $famout\n";
+#	exit;
+	die $!."($famname_in)" unless open IF, "< $famname_in";
+
+	my %fam_hash;
+
+	while (my $line = <IF>){
+	    my @cells = @{&split_line_ref(\$line)};
+	    push @famarray,"@cells";
+	    my $mm4_id = $cells[0]."____".$cells[1];
+	    $fam_hash{$mm4_id} = "@cells";
+#	    print "strange: $mm4_id\n";
+	}
+	close IF;
+	#	print "hier3\n"; exit;
+#	unless (-e "$haps_fam") {#
+#	    print "Warning, not found: $haps_fam\n";
+#	    print "taking this instead: $famname_in\n";
+#	    $haps_fam
+	    
+#	    exit;
+#	}
+	
+	die $!."($haps_fam)" unless open IF, "< $haps_fam";
+	die $!."($famout.ow)" unless open OF, "> $famout";
+	
+	while (my $line = <IF>){
+	    my @cells = @{&split_line_ref(\$line)};
+	    
+	    #    if ($cells[5] != 2 && $cells[5] != 1) {#
+	    #	$cells[5] = 1;
+	    #    }
+
+	    if ($mm4_sw) {
+		if (exists $fam_hash{$cells[0]}){
+		    print OF $fam_hash{$cells[0]}."\n";
+		}
+		else {
+		    print "Error: $cells[0] from $haps_fam is not found in $famname_in\n";
+		    exit;
+		}
+
+	    }
+	    else {
+		if ($cells [0] =~ /\D/){ 
+		    #		print "$cells[0] has nondigits\n";
+		    print OF "@cells\n";
+		}
+		else {
+		    print OF $famarray [$cells[0]]."\n";
+		}
+	    }
+	}
+	close IF;
+	close OF;
+#	print "hier3\n"; exit;
+	
+    }
+}
+else {
+
+#    print "hier4\n"; exit;
+    die $!."($famout.ow)" unless open OF, "> $famout";
+    die $!."($famname_in)" unless open IF, "< $famname_in";
+
+
+    while (my $line = <IF>){
+	my @cells = @{&split_line_ref(\$line)};
+	print OF "@cells\n";
+	
+    }
+    close IF;
+
+    close IF;
+    close OF;
+}
+
+
+
+
+
+
+# preprocess dosages to ensure probabilities sum to 1
+my $twodos_tmp = "$haps_file1.combined.tmp2dos.gz";
+my $twodos_tmp_success = "$twodos_tmp.fini";
+my $imp_proc = "impprob_to_2dos $haps_file_gz $twodos_tmp";
+print "improb script: $imp_proc\n" if ($debug);
+
+#print "debug\n";
+#    sleep(10);
+
+unless (-e $twodos_tmp_success) {
+    &mysystem ($imp_proc);
+}
+
+print "finished, now plink\n" if ($debug);
+&mytime();
+
+# check success
+# if successful, remove $haps_file_gz now to save space
+
+
+#if (-e $twodos_tmp_success) {
+#    &mysystem("rm $haps_file_gz")
+#} 
+#else {
+#    die "Failed to create $twodos_tmp from $haps_file_gz";
+#}
+
+
+#my $sys_loc = "$ploc/plink --dosage $haps_file_gz noheader skip0=1 skip1=1 format=3 Z --fam $famname_in.ow --allow-no-sex --write-dosage --out $dosout";
+my $sys_loc = "$ploc/plink --silent --memory 2000 --dosage $twodos_tmp noheader skip0=1 skip1=1 format=2  Zout --fam $famout --allow-no-sex --write-dosage --out $dosout";
+print "$sys_loc\n" if ($debug);
+&mysystem ($sys_loc);
+
+print "finished\n" if ($debug);
+&mytime();
+
+#&mysystem ("rm $famout.ow");
+
+
+#print "debug....\n";
+#sleep (10);
+
+#exit;
+
+
+
+my %ngt;
+my $cc = 0;
+die $!."($bimname)" unless open FILE, "< $bimname";
+while (my $line = <FILE>){
+    my @cells = @{&split_line_ref(\$line)};
+    $ngt{$cells[1]} = 1;
+    $cc++;
+}
+close FILE;
+#print "N:$cc\n";
+#print "$info_file\n";
+#sleep(3);
+my $mapin = $haps_file1;
+$mapin .= ".map";
+
+
+print "create various mapfiles and ngtfiles\n" if ($debug);
+
+if (-e $info_file) {
+    die $!."($info_file)" unless open IF, "< $info_file";
+    die $!."($mapout)" unless open MA, "> $mapout";
+    die $!."($ngtout)" unless open NGT, "> $ngtout";
+    my $line = <IF>;
+    while (my $line = <IF>){
+	my @cells = @{&split_line_ref(\$line)};
+
+	my $snp = $cells[1];
+	my $pos = $cells[2];
+
+
+	my $bas_str = "$chr $snp 0 $pos";
+	print MA "$bas_str\n";
+	my $ngt_loc = 0;
+	if (exists $ngt{$snp}) {
+	    $ngt_loc = 1;
+	}
+	print NGT "$bas_str $ngt_loc\n";
+    }
+    close IF;
+    close MA;
+    close NGT;
+}
+elsif (-e "$mapin") {
+
+    die $!."($mapin)" unless open IF, "< $mapin";
+    die $!."($mapout)" unless open MA, "> $mapout";
+    die $!."($ngtout)" unless open NGT, "> $ngtout";
+#    my $line = <IF>;
+    while (my $line = <IF>){
+	my @cells = @{&split_line_ref(\$line)};
+
+	my $snp = $cells[1];
+	my $pos = $cells[3];
+
+
+	my $bas_str = "$chr $snp 0 $pos";
+	print MA "$bas_str\n";
+	my $ngt_loc = 0;
+	if (exists $ngt{$snp}) {
+	    $ngt_loc = 1;
+	}
+	print NGT "$bas_str $ngt_loc\n";
+    }
+    close IF;
+    close MA;
+    close NGT;
+
+}
+
+else {
+    ### if no info file or mapfile you have to read it out of the original file
+    ### this happens withg impute4
+
+
+    my $igz = gzopen("$haps_collection[0]", "rb");
+    
+    die $!."($mapout)" unless open MA, "> $mapout";
+    die $!."($ngtout)" unless open NGT, "> $ngtout";
+    #    my $line = <IF>;
+
+    while ($igz->gzreadline(my $line)){
+	chomp($line);
+	my @cells = @{&split_line_ref(\$line)};
+
+	my $snp = $cells[1];
+	my $pos = $cells[2];
+
+
+	my $bas_str = "$chr $snp 0 $pos";
+	print MA "$bas_str\n";
+	my $ngt_loc = 0;
+	if (exists $ngt{$snp}) {
+	    $ngt_loc = 1;
+	}
+	print NGT "$bas_str $ngt_loc\n";
+    }
+    close IF;
+    close MA;
+    close NGT;
+
+
+}
+
+&mytime();
+
+#&mysystem ("gzip -c $dosout.out.dosage > $dosout.out.dosage.tmp.gz");
+#&mysystem ("rm $dosout.out.dosage");
+#&mysystem ("mv $dosout.out.dosage.tmp.gz $dosout.out.dosage.gz");
+
+#print "no remove\n";
+#exit;
+
+
+die $!."$dosout.dos.cmd" unless open BC, "> $dosout.dos.cmd";
+foreach (@cmd_collect) {
+    print BC "$_\n";
+}
+close BC;
+
+
+#exit;
+&mysystem ("touch $finiout");
+&mysystem ("rm $twodos_tmp");
+&mysystem ("rm $twodos_tmp.fini");
+&mysystem("rm $haps_file_gz");
+    
+print "done\n" if ($debug);

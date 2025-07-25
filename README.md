@@ -97,7 +97,6 @@ Edit `ricopili.conf` via your preferred text editor and paste the following cont
 
 ## SURFsnellius ricopili.conf file 
 ```bash
-cat ricopili.conf 
 eloc /home/$USER/.conda/envs/rp_env/bin/ # conda environment installation
 i2loc /gpfs/work5/0/pgcdac/ricopili_download/dependencies/impute_v2
 i4loc /gpfs/work5/0/pgcdac/ricopili_download/dependencies/impute_v4

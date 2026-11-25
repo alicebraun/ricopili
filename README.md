@@ -61,12 +61,8 @@ mv ricopili/rp_bin/ ~
 Or via wget:
 
 ```bash
-wget https://personal.broadinstitute.org/braun/sharing/rp_bin.2025_Feb_20.001.tar.gz 
-wget https://personal.broadinstitute.org/braun/sharing/rp_bin.2025_Feb_20.001.md5.cksum 
-
-# verify checksum
-md5sum rp_bin.2025_Feb_20.001.md5.cksum 
-tar -xvzf rp_bin.2025_Feb_20.001.tar.gz 
+wget --no-check-certificate "https://drive.google.com/uc?export=download&id=1Q81tlpFR0j-ZlQMkPVQce4EUcpSmAw3N" -O rp_bin.2026_Jul_31.002.tar.gz
+tar -xvzf rp_bin.2026_Jul_31.002.tar.gz
 ```
 
 > [!NOTE]  

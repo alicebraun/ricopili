@@ -1,6 +1,6 @@
 **Author**: Alice Braun [braun@broadinstitute.org](mailto:braun@broadinstitute.org)<br> 
 
-`Last update: 2025-07-11` <br>
+`Last update: 2026-11-25` <br>
 
 > [!NOTE]  
 >This short README is designed to help you quickly set up and use the RICOPILI pipeline with centrally deployed dependencies and imputation references on the national Dutch supercomputer [SURFsnellius](https://www.surf.nl/en/services/snellius-the-national-supercomputer). <br>
